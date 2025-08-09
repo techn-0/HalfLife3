@@ -33,11 +33,9 @@ public class QuestBar : MonoBehaviour
     }
 
     // UI 갱신
-    public void UpdateUI()
+    private void UpdateUI()
     {
-        float fillValue = maxValue > 0 ? (float)currentValue / maxValue : 0f;
-        foreground.fillAmount = fillValue;
+        foreground.fillAmount = (float)currentValue / maxValue;
         valueText.text = $"{currentValue}/{maxValue}";
-        Debug.Log($"QuestBar UpdateUI: current={currentValue}, max={maxValue}, fillAmount={fillValue}");
     }
 }
