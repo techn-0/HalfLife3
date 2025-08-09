@@ -40,6 +40,7 @@ public class ShopElement : MonoBehaviour
                 isActive = !isActive;
                 PlayerPrefs.SetInt($"{id}_isActive", isActive ? 1 : 0);
                 PlayerPrefs.Save();
+                EventManager.Instance.Publish("UpdateRoom");
         }
         else
         {
@@ -54,6 +55,7 @@ public class ShopElement : MonoBehaviour
                     PlayerPrefs.SetInt($"{id}_isOpen", 1);
                     PlayerPrefs.SetInt($"{id}_isActive", 1); // 구매하면 자동 활성화
                     PlayerPrefs.Save();
+                    EventManager.Instance.Publish("UpdateRoom");
 
                     isActive = true;
                 }

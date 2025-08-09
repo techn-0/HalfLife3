@@ -6,7 +6,8 @@ public class GameManager : BaseSingleton<GameManager>
     public static GameManager instance = null;
     
     public DecoPopUp decoPopUp;
-
+    public RoomController roomController;
+    
     public int Gold;
     void Awake()
     {
@@ -23,6 +24,7 @@ public class GameManager : BaseSingleton<GameManager>
 
     public void Start()
     {
-        decoPopUp.Init();   
+        decoPopUp.Init();
+        roomController.Init();
     }
 }
