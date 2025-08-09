@@ -7,24 +7,35 @@ public class SubCategoryController : MonoBehaviour
     public class SubCategoryTab
     {
         public Toggle subToggle;  // 작은 카테고리 토글
-        public string categoryId; // 상점 로직에 넘길 ID
+        public ShopTab Tab; // 탭
     }
 
     public SubCategoryTab[] subCategories;
     //public ShopUI shopUI; // 상점 아이템 필터 담당
 
-    void Start()
+    public void Init()
     {
+        EventManager.Instance.Subscribe("UpdateUI", UpdateUI);
         foreach (var sub in subCategories)
         {
+            sub.Tab.Init();
             sub.subToggle.onValueChanged.AddListener(isOn =>
             {
+                sub.Tab.gameObject.SetActive(isOn);
                 if (isOn)
                 {
-                    // 상점 아이템 필터 변경
-                    //shopUI.SetSubCategory(sub.categoryId);
+                    sub.Tab.UpdateUI();
                 }
             });
+        }
+    }
+
+    public void UpdateUI()
+    {
+        Debug.Log("Event");
+        foreach (var sub in subCategories)
+        {
+            sub.Tab.UpdateUI();
         }
     }
 }
