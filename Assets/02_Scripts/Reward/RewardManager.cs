@@ -436,7 +436,7 @@ namespace _02_Scripts.Reward
                 
                 // 코인 보상 지급 (Track Count * 1000)
                 int trackCount = GetTrackCount(type);
-                long coinReward = trackCount * COIN_REWARD_PER_TRACK;
+                long coinReward = 50000;
                 CoinManager.AddCoins(coinReward);
                 
                 Debug.Log($"[RewardManager] {type} 보상 수령 완료! 코인 {coinReward} 지급됨 (Track Count: {trackCount})");
