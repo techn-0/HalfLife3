@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using _02_Scripts.Shop;
 
 namespace _02_Scripts.Reward
 {
@@ -16,6 +17,9 @@ namespace _02_Scripts.Reward
         // Count와 Received를 튜플로 통합 관리 (Dictionary로 변경)
         private readonly Dictionary<RewardType, (int count, bool received)> _rewards = new();
         private readonly Dictionary<RewardType, int> _trackCounts = new(); // Track Count (목표)
+
+        // Coin reward per track
+        private const int COIN_REWARD_PER_TRACK = 1000;
 
         // TODO: 코인 관련
         // TODO: 트랙 관련 provider
@@ -217,12 +221,28 @@ namespace _02_Scripts.Reward
                 // 수령 처리
                 _rewards[type] = (current.count, true);
                 progress = GetProgress(type);
+                
+                // 코인 보상 지급 (Track Count * 1000)
+                int trackCount = GetTrackCount(type);
+                long coinReward = trackCount * COIN_REWARD_PER_TRACK;
+                CoinManager.AddCoins(coinReward);
+                
+                Debug.Log($"[RewardManager] {type} 보상 수령 완료! 코인 {coinReward} 지급됨 (Track Count: {trackCount})");
+                
                 return true;
             }
 
             // 키가 없으면 완료된 상태로 수령 처리
             _rewards[type] = (progress.Count, true);
             progress = GetProgress(type);
+            
+            // 코인 보상 지급 (Track Count * 1000)
+            int trackCountForNewKey = GetTrackCount(type);
+            long coinRewardForNewKey = trackCountForNewKey * COIN_REWARD_PER_TRACK;
+            CoinManager.AddCoins(coinRewardForNewKey);
+            
+            Debug.Log($"[RewardManager] {type} 보상 수령 완료! 코인 {coinRewardForNewKey} 지급됨 (Track Count: {trackCountForNewKey})");
+            
             return true;
         }
 
