@@ -13,6 +13,26 @@ namespace _02_Scripts.Reward
     /// </summary>
     public sealed class RewardManager : MonoBehaviour
     {
+        // ==== Singleton ====
+        private static RewardManager _instance;
+        public static RewardManager Instance
+        {
+            get
+            {
+                if (_instance == null)
+                {
+                    _instance = FindFirstObjectByType<RewardManager>();
+                    if (_instance == null)
+                    {
+                        var go = new GameObject("RewardManager");
+                        _instance = go.AddComponent<RewardManager>();
+                        DontDestroyOnLoad(go);
+                    }
+                }
+                return _instance;
+            }
+        }
+
         // ==== State ====
         // Count와 Received를 튜플로 통합 관리 (Dictionary로 변경)
         private readonly Dictionary<RewardType, (int count, bool received)> _rewards = new();
@@ -24,59 +44,27 @@ namespace _02_Scripts.Reward
         // TODO: 코인 관련
         // TODO: 트랙 관련 provider
 
-        // ===== Unity Lifecycle =====
-
-        private void Start()
+        // ===== Constructor (Private) =====
+        private RewardManager()
         {
-            // // Daily 관련 테스트 로그
-            // Debug.Log("[RewardManager] Daily Reward 테스트 시작");
-            //
-            // // 1. Track Count 설정 테스트
-            // SetTrackCount(RewardType.Daily, 50);
-            // Debug.Log($"[Daily] Track Count 설정: {GetTrackCount(RewardType.Daily)}");
-            //
-            // // 2. Goal 계산 테스트
-            // int goal = GetGoal(RewardType.Daily);
-            // Debug.Log($"[Daily] 계산된 Goal: {goal}");
-            //
-            // // 3. 초기 상태 확인
-            // var initialProgress = GetProgress(RewardType.Daily);
-            // Debug.Log($"[Daily] 초기 진행도 - Count: {initialProgress.Count}, Goal: {initialProgress.Goal}, Completed: {initialProgress.Completed}, Received: {initialProgress.Received}, Receivable: {initialProgress.Receivable}");
-            //
-            // // 4. 카운트 증가 테스트
-            // Increase(RewardType.Daily, 10);
-            // Debug.Log($"[Daily] 10 증가 후 Count: {GetCount(RewardType.Daily)}");
-            //
-            // // 5. 진행도 업데이트 확인
-            // var midProgress = GetProgress(RewardType.Daily);
-            // Debug.Log($"[Daily] 중간 진행도 - Count: {midProgress.Count}, Completed: {midProgress.Completed}, Remaining: {midProgress.Remaining}");
-            //
-            // // 6. 목표 완료까지 증가
-            // Increase(RewardType.Daily, 40); // 총 50이 되어 완료
-            // var completedProgress = GetProgress(RewardType.Daily);
-            // Debug.Log($"[Daily] 완료 진행도 - Count: {completedProgress.Count}, Completed: {completedProgress.Completed}, Receivable: {completedProgress.Receivable}");
-            //
-            // // 7. 보상 수령 테스트
-            // if (TryReceive(RewardType.Daily, out var receivedProgress))
-            // {
-            //     Debug.Log($"[Daily] 보상 수령 성공! Count: {receivedProgress.Count}, Received: {receivedProgress.Received}");
-            // }
-            // else
-            // {
-            //     Debug.LogWarning("[Daily] 보상 수령 실패");
-            // }
-            //
-            // // 8. 중복 수령 시도 테스트
-            // if (TryReceive(RewardType.Daily, out RewardProgress _))
-            // {
-            //     Debug.Log("[Daily] 중복 수령 성공 (예상치 못함)");
-            // }
-            // else
-            // {
-            //     Debug.Log("[Daily] 중복 수령 차단됨 (정상)");
-            // }
-            //
-            // Debug.Log("[RewardManager] Daily Reward 테스트 완료");
+            // 생성자에서 초기화 작업
+            Debug.Log("[RewardManager] 싱글턴 인스턴스 생성됨");
+        }
+
+        // ===== Unity Lifecycle =====
+        
+        private void Awake()
+        {
+            if (_instance == null)
+            {
+                _instance = this;
+                DontDestroyOnLoad(gameObject);
+                Debug.Log("[RewardManager] 싱글턴 인스턴스 생성됨");
+            }
+            else if (_instance != this)
+            {
+                Destroy(gameObject);
+            }
         }
 
         /// <summary>
