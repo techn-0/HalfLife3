@@ -241,7 +241,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   content: {fileID: 1573595791}
-  itemPrefab: {fileID: 2418771257831209333, guid: 5eda1673dba2e334683592ad8a52b5ca, type: 3}
+  itemPrefab: {fileID: 1414468861875958403, guid: 5eda1673dba2e334683592ad8a52b5ca, type: 3}
 --- !u!1 &123131244
 GameObject:
   m_ObjectHideFlags: 0
@@ -735,7 +735,7 @@ MonoBehaviour:
     m_Top: 0
     m_Bottom: 0
   m_ChildAlignment: 0
-  m_Spacing: 150
+  m_Spacing: 8
   m_ChildForceExpandWidth: 1
   m_ChildForceExpandHeight: 0
   m_ChildControlWidth: 1
