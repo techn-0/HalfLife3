@@ -56,8 +56,6 @@ public class ShopElement : MonoBehaviour
                     PlayerPrefs.Save();
 
                     isActive = true;
-
-                    EventManager.Instance.Publish("UpdateUI");
                 }
                 else
                 {
@@ -65,6 +63,8 @@ public class ShopElement : MonoBehaviour
                     Debug.Log("Gold가 부족합니다.");
                 }
         }
+        
+        EventManager.Instance.Publish("UpdateUI");
     }
     public void UpdateUI()
     {
