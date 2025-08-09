@@ -1,4 +1,5 @@
 using System;
+using _02_Scripts.Shop;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -25,6 +26,7 @@ public class ShopElement : MonoBehaviour
     private bool isActive = false;
     private bool isOpen = false;
 
+    [SerializeField] private bool isCharacterButton = false;
     public void Init()
     {
         button?.onClick.AddListener(ClickBtn);
@@ -40,6 +42,10 @@ public class ShopElement : MonoBehaviour
         {
                 // 이미 구매된 경우: 켜기/끄기 토글
                 isActive = !isActive;
+                if (isActive)
+                {
+                    FilterHuman();
+                }
                 PlayerPrefs.SetInt($"{id}_isActive", isActive ? 1 : 0);
                 PlayerPrefs.Save();
                 EventManager.Instance.Publish("UpdateRoom");
@@ -47,15 +53,15 @@ public class ShopElement : MonoBehaviour
         else
         {
                 // 구매 로직
-                if (GameManager.instance != null && GameManager.instance.Gold >= price)
+                if (GameManager.instance != null && CoinManager.TrySpendCoins(price))
                 {
-                    // 금액 차감
-                    GameManager.instance.Gold -= price;
-
                     // 구매 상태 저장
                     isOpen = true;
+                    FilterHuman();
+                    
                     PlayerPrefs.SetInt($"{id}_isOpen", 1);
                     PlayerPrefs.SetInt($"{id}_isActive", 1); // 구매하면 자동 활성화
+
                     PlayerPrefs.Save();
                     EventManager.Instance.Publish("UpdateRoom");
 
@@ -101,7 +107,7 @@ public class ShopElement : MonoBehaviour
         }
         else
         {
-            if (GameManager.instance != null && GameManager.instance.Gold >= price)
+            if (GameManager.instance != null && CoinManager.Balance >= price)
             {
                 foreach (GameObject obj in PriceObj[0].Objects)
                 {
@@ -123,6 +129,17 @@ public class ShopElement : MonoBehaviour
                     obj.SetActive(false);
                 }
             }
+        }
+    }
+
+    public void FilterHuman()
+    {
+        if (isCharacterButton)
+        {
+            PlayerPrefs.SetInt("Human1_isActive", 0);
+            PlayerPrefs.SetInt("Human2_isActive", 0);
+            PlayerPrefs.SetInt("Human3_isActive", 0);
+            PlayerPrefs.SetInt("Human4_isActive", 0);
         }
     }
 }

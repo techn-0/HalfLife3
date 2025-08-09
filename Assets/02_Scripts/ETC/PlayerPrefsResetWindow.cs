@@ -1,3 +1,5 @@
+#if UNITY_EDITOR_WIN
+using _02_Scripts.Shop;
 using UnityEditor;
 using UnityEngine;
 
@@ -25,5 +27,12 @@ public class PlayerPrefsResetWindow : EditorWindow
                 Debug.Log("모든 PlayerPrefs가 초기화되었습니다.");
             }
         }
+        
+        if (GUILayout.Button("AddGold", GUILayout.Height(40)))
+        {
+                CoinManager.AddCoins(1000);
+                Debug.Log("돈 증가됨.");
+        }
     }
 }
+#endif
