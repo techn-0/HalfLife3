@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using _02_Scripts.Http.Components;
+using _02_Scripts.Reward;
 using UnityEngine;
 
 /// <summary>
@@ -32,6 +33,9 @@ public sealed class DailyQuestManager : MonoBehaviour
     [SerializeField] private bool enableAutoVerification = true; // 자동 검증 활성화
     [SerializeField] private float verificationInterval = 5f; // 5초마다 검증
     [SerializeField] private bool useLocalTime = false; // true: 로컬 시간 기준, false: UTC 기준
+
+    [Header("Dependencies")]
+    [SerializeField] private RewardManager rewardManager; // Unity에서 주입할 RewardManager
 
     // 이벤트 — UI가 구독해서 갱신
     public event Action<IReadOnlyList<QuestData>> OnQuestsGenerated;
@@ -89,8 +93,7 @@ public sealed class DailyQuestManager : MonoBehaviour
         for (int i = 0; i < todayQuests.Count; i++)
         {
             Debug.Log($"[DailyQuestManager] Quest[{i}] - ID: {todayQuests[i].id}, Status: {todayQuests[i].status}");
-        }
-        return todayQuests;
+        }        return todayQuests;
     }
 
     /// <summary>완료(검증 없음, 버튼으로 호출)</summary>
@@ -111,6 +114,17 @@ public sealed class DailyQuestManager : MonoBehaviour
 
         // 퀘스트 완료 처리
         q.status = QuestStatus.Completed;
+        
+        // RewardManager에 Daily 보상 카운트 증가
+        if (rewardManager != null)
+        {
+            rewardManager.Increase(RewardType.Daily, 1);
+            Debug.Log($"[DailyQuestManager] RewardManager Daily 카운트 증가 완료 - Quest ID: {questId}");
+        }
+        else
+        {
+            Debug.LogWarning("[DailyQuestManager] RewardManager가 할당되지 않았습니다!");
+        }
         
         // 이벤트 발생 (UI 업데이트용)
         try
@@ -201,6 +215,8 @@ public sealed class DailyQuestManager : MonoBehaviour
         Debug.Log("[DailyQuestManager] 퀘스트 초기화 시작");
         ClearAllQuests();
         Debug.Log("[DailyQuestManager] 퀘스트 초기화 완료");
+        // RewardManager 초기화
+        RewardManager.Instance.ResetToday();
     }
     
     [ContextMenu("Test/Delete Save Files")]

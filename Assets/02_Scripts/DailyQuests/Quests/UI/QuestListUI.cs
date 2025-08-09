@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 public class QuestListUI : MonoBehaviour
@@ -81,7 +82,7 @@ public class QuestListUI : MonoBehaviour
         foreach (var q in list)
         {
             var ui = Instantiate(itemPrefab, content);
-            ui.Bind(q);
+            ui.Bind(q, this); // this 참조 전달
             questUIItems[q.id] = ui; // 딕셔너리에 등록
         }
         
@@ -119,6 +120,97 @@ public class QuestListUI : MonoBehaviour
         yield return null; // 다음 프레임 대기
         
         questUI.UpdateQuestStatus(QuestStatus.Completed);
+    }
+    
+    // 퀘스트 완료 처리 (QuestItemUI에서 이동)
+    public void CompleteQuest(string questId)
+    {
+        Debug.Log($"🎯 [QuestListUI] 퀘스트 완료 요청: {questId}");
+        
+        // 안전성 체크
+        if (string.IsNullOrEmpty(questId) || DailyQuestManager.Instance == null)
+        {
+            Debug.LogError($"❌ [QuestListUI] 초기화 오류: questId 또는 DailyQuestManager가 없습니다!");
+            return;
+        }
+        
+        // 해당 UI 아이템 찾기
+        if (!questUIItems.TryGetValue(questId, out var questUI) || questUI == null)
+        {
+            Debug.LogError($"❌ [QuestListUI] UI 아이템을 찾을 수 없습니다: {questId}");
+            return;
+        }
+        
+        // 이미 완료된 퀘스트 체크
+        var questData = DailyQuestManager.Instance.GetQuests().FirstOrDefault(q => q.id == questId);
+        if (questData?.status == QuestStatus.Completed)
+        {
+            Debug.LogWarning($"⚠️ [QuestListUI] 이미 완료된 퀘스트입니다: {questId}");
+            return;
+        }
+        
+        // 1단계: 퀘스트 완료 처리 (DailyQuestManager에서 상태 변경)
+        Debug.Log($"🔄 [QuestListUI] DailyQuestManager.CompleteQuest 호출 중...");
+        bool success = DailyQuestManager.Instance.CompleteQuest(questId);
+        Debug.Log($"🔄 [QuestListUI] CompleteQuest 결과: {success}");
+        
+        if (success)
+        {
+            // 2단계: UI 업데이트는 OnQuestCompleted 이벤트에서 자동 처리됨
+            Debug.Log($"✅ [QuestListUI] 퀘스트 완료 처리 완료: {questId}");
+        }
+        else
+        {
+            Debug.LogError($"❌ [QuestListUI] 퀘스트 완료 실패: {questId}");
+        }
+    }
+    
+    // 전체 퀘스트 상태 디버깅 (QuestItemUI에서 이동 및 확장)
+    [ContextMenu("Debug/Print All Quest Status")]
+    public void DebugPrintAllQuestStatus()
+    {
+        Debug.Log("=== 전체 퀘스트 상태 디버깅 ===");
+        Debug.Log($"UI 아이템 개수: {questUIItems.Count}");
+        
+        if (DailyQuestManager.Instance == null)
+        {
+            Debug.LogError("DailyQuestManager.Instance가 null입니다!");
+            return;
+        }
+        
+        var allQuests = DailyQuestManager.Instance.GetQuests();
+        Debug.Log($"Manager의 퀘스트 개수: {allQuests?.Count ?? 0}");
+        
+        foreach (var kvp in questUIItems)
+        {
+            string questId = kvp.Key;
+            QuestItemUI questUI = kvp.Value;
+            
+            Debug.Log($"--- 퀘스트 ID: {questId} ---");
+            
+            if (questUI != null)
+            {
+                Debug.Log($"UI 존재: ✓");
+                // UI의 상태는 QuestItemUI의 public 메서드로 접근하거나 Manager에서 확인
+            }
+            else
+            {
+                Debug.Log($"UI 존재: ✗ (null)");
+            }
+            
+            // Manager에서의 실제 상태 확인
+            var actualQuest = allQuests?.FirstOrDefault(q => q.id == questId);
+            if (actualQuest != null)
+            {
+                Debug.Log($"Manager 상태: {actualQuest.status}");
+                Debug.Log($"Manager 제목: {actualQuest.title}");
+            }
+            else
+            {
+                Debug.Log($"Manager에서 찾을 수 없음");
+            }
+        }
+        Debug.Log("=== 디버깅 끝 ===");
     }
     
     // 퀘스트 초기화 (UI 클리어)
