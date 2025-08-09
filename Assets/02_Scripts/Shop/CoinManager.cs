@@ -1,8 +1,8 @@
 // CoinManager.cs
 
 using System;
-using System.IO;
 using UnityEngine;
+using _02_Scripts.Common;
 
 namespace _02_Scripts.Shop
 {
@@ -30,7 +30,6 @@ namespace _02_Scripts.Shop
         // ===== State =====
         private long _balance;
         private string _savePath;
-        private readonly object _ioLock = new object();
 
         [Serializable]
         private struct SaveData
@@ -51,7 +50,7 @@ namespace _02_Scripts.Shop
             Instance = this;
             DontDestroyOnLoad(gameObject);
 
-            _savePath = Path.Combine(Application.persistentDataPath, saveFileName);
+            _savePath = JsonStorage.GetSavePath(saveFileName);
             Load();
         }
 
@@ -99,60 +98,28 @@ namespace _02_Scripts.Shop
         // ===== Persistence =====
         private void Load()
         {
-            try
-            {
-                if (!File.Exists(_savePath))
-                {
-                    _balance = 0;
-                    return;
-                }
+            var data = JsonStorage.LoadOrDefault(_savePath, () => new SaveData { ver = SAVE_VERSION, coin = 0 });
 
-                var json = File.ReadAllText(_savePath);
-                var data = JsonUtility.FromJson<SaveData>(json);
-                if (data.ver != SAVE_VERSION)
-                {
-                    // 버전 규칙이 바뀌면 여기서 마이그레이션 처리 가능
-                    _balance = data.coin;
-                }
-                else
-                {
-                    _balance = data.coin;
-                }
-            }
-            catch
+            if (data.ver != SAVE_VERSION)
             {
-                // 손상된 파일 등: 안전하게 초기화
-                _balance = 0;
+                // 버전 규칙이 바뀌면 여기서 마이그레이션 처리 가능
+                _balance = data.coin;
+            }
+            else
+            {
+                _balance = data.coin;
             }
         }
 
         private void Save()
         {
-            // 크래시 안전성을 위해 임시 파일에 먼저 기록 후 교체
-            lock (_ioLock)
+            var data = new SaveData
             {
-                try
-                {
-                    var data = new SaveData { ver = SAVE_VERSION, coin = _balance };
-                    var json = JsonUtility.ToJson(data);
+                ver = SAVE_VERSION,
+                coin = _balance
+            };
 
-                    var dir = Path.GetDirectoryName(_savePath);
-                    if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-                        Directory.CreateDirectory(dir);
-
-                    var tmpPath = _savePath + ".tmp";
-                    File.WriteAllText(tmpPath, json);
-
-                    // 기존 파일 교체
-                    if (File.Exists(_savePath))
-                        File.Delete(_savePath);
-                    File.Move(tmpPath, _savePath);
-                }
-                catch
-                {
-                    // 저장 실패는 조용히 무시 (다음 기회에 재시도)
-                }
-            }
+            JsonStorage.Save(data, _savePath);
         }
     }
 }
