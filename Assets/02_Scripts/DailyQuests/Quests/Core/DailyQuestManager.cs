@@ -2,13 +2,14 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using _02_Scripts.Http.Components;
 using UnityEngine;
 
 /// <summary>
 /// DailyQuestManager
 /// - 매일 08:00(로컬) 트랙당 1개 퀘스트 자동 생성(00:00으로 자동생성 시간을 변경하는게 좋을까요)
 /// - 완료 조건: 버튼 클릭(검증 없음)
-/// - 보상: 트랙 수별 총합 → 퀘스트당 균등 분배
 /// - 저장: 날짜별 JSON (Application.persistentDataPath/DailyQuests/)
 /// - UI/네트워크와 분리: 이벤트(Event) + 퍼블릭 API만 제공
 /// </summary>
@@ -22,21 +23,29 @@ public sealed class DailyQuestManager : MonoBehaviour
     [Header("Generation Time (Local)")]
     [Range(0,23)] public int generateHour = 8; // 08:00
 
-    [Header("Total Rewards by Track Count (3개 이상은 자동 확장)")]
-    public int totalXp1 = 100;   public float totalCoin1 = 1f;
-    public int totalXp2 = 220;   public float totalCoin2 = 2.2f;
-    public int totalXp3 = 360;   public float totalCoin3 = 3.6f;
+    [Header("GitHub 자동 검증 설정 (Portfolio 퀘스트용)")]
+    [SerializeField] private string githubToken = ""; // GitHub PAT
+    [SerializeField] private string githubUserAgent = "HalfLife3-DailyQuest/1.0";
+    [SerializeField] private string githubOwner = "oak-cassia";
+    [SerializeField] private string githubRepo = "HalfLife3";
+    [SerializeField] private string githubBranch = ""; // 빈 값이면 default branch 사용
+    [SerializeField] private bool enableAutoVerification = true; // 자동 검증 활성화
+    [SerializeField] private float verificationInterval = 5f; // 5초마다 검증
+    [SerializeField] private bool useLocalTime = false; // true: 로컬 시간 기준, false: UTC 기준
 
     // 이벤트 — UI가 구독해서 갱신
     public event Action<IReadOnlyList<QuestData>> OnQuestsGenerated;
     public event Action<QuestData> OnQuestCompleted;
-    public event Action<int,float> OnRewardGranted;
     public event Action OnPerfectDay;
 
     private readonly List<QuestData> todayQuests = new();
     private DailySave save = new DailySave();
     private string todayStr;
     private DateTime nextGenTimeLocal;
+    
+    // GitHub 자동 검증 관련
+    private GithubClient _githubClient;
+    private Coroutine _verificationCoroutine;
 
     private string BasePath =>
         Path.Combine(Application.persistentDataPath, "DailyQuests");
@@ -53,14 +62,23 @@ public sealed class DailyQuestManager : MonoBehaviour
     {
         Directory.CreateDirectory(BasePath);
         todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+        
+        // 트랙 선택을 위해 activeTracks 초기화 (인스펙터 설정 무시)
+        activeTracks.Clear();
+        Debug.Log("[DailyQuestManager] activeTracks 초기화 완료 - 트랙 선택 대기");
+        
         LoadOrInit();
         SetupNextGenTime();
         StartCoroutine(Scheduler());
+        
+        // GitHub 자동 검증 초기화
+        InitializeGitHubVerification();
     }
 
     // ===== Public API =====
     public IReadOnlyList<QuestData> GetQuests() 
     {
+        // 디버깅을 위해 일시적으로 로그 활성화
         Debug.Log($"[DailyQuestManager] GetQuests() 호출됨 - 현재 퀘스트 개수: {todayQuests.Count}");
         for (int i = 0; i < todayQuests.Count; i++)
         {
@@ -73,14 +91,35 @@ public sealed class DailyQuestManager : MonoBehaviour
     public bool CompleteQuest(string questId)
     {
         var q = todayQuests.Find(x => x.id == questId);
-        if (q == null || q.status == QuestStatus.Completed) return false;
+        if (q == null)
+        {
+            Debug.LogError($"[DailyQuestManager] 퀘스트를 찾을 수 없습니다: {questId}");
+            return false;
+        }
+        
+        if (q.status == QuestStatus.Completed)
+        {
+            Debug.LogWarning($"[DailyQuestManager] 이미 완료된 퀘스트입니다: {questId}");
+            return false;
+        }
 
+        // 퀘스트 완료 처리
         q.status = QuestStatus.Completed;
-        OnQuestCompleted?.Invoke(q);
-
-        save.xpTotal += q.reward.xp;
-        save.coinTotal += q.reward.coin;
-        OnRewardGranted?.Invoke(q.reward.xp, q.reward.coin);
+        
+        // 이벤트 발생 (UI 업데이트용)
+        try
+        {
+            if (OnQuestCompleted != null)
+            {
+                OnQuestCompleted.Invoke(q);
+                // 추가 안전성을 위해 다음 프레임에서도 한 번 더 이벤트 발생
+                StartCoroutine(InvokeQuestCompletedNextFrame(q));
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[DailyQuestManager] OnQuestCompleted 이벤트 발생 중 오류: {ex.Message}");
+        }
 
         // 모두 완료 시 Perfect Day
         bool allDone = true;
@@ -89,7 +128,6 @@ public sealed class DailyQuestManager : MonoBehaviour
         if (allDone)
         {
             save.streak += 1;
-            save.gachaTickets += 1;
             OnPerfectDay?.Invoke();
         }
 
@@ -99,49 +137,133 @@ public sealed class DailyQuestManager : MonoBehaviour
 
     public DateTime GetNextGenerationTimeLocal() => nextGenTimeLocal;
 
+    /// <summary>퀘스트 초기화 (모든 퀘스트 삭제 및 저장 파일 제거)</summary>
+    public void ClearAllQuests()
+    {
+        todayQuests.Clear();
+        
+        // 저장 파일도 삭제
+        var path = PathFor(todayStr);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+        
+        // 빈 저장 데이터로 초기화
+        save = new DailySave
+        {
+            date = todayStr,
+            quests = new QuestData[0],
+            streak = 0
+        };
+        
+        // UI에 빈 목록 알림
+        OnQuestsGenerated?.Invoke(todayQuests);
+    }
+
+    /// <summary>활성 트랙 설정 (트랙 선택 UI에서 호출)</summary>
+    public void SetActiveTracks(List<TrackType> selectedTracks)
+    {
+        Debug.Log($"[DailyQuestManager] SetActiveTracks 호출됨 - 기존: [{string.Join(", ", activeTracks)}]");
+        Debug.Log($"[DailyQuestManager] SetActiveTracks 호출됨 - 새로운: [{string.Join(", ", selectedTracks)}]");
+        
+        activeTracks.Clear();
+        activeTracks.AddRange(selectedTracks);
+        
+        Debug.Log($"[DailyQuestManager] 활성 트랙 설정 완료: [{string.Join(", ", activeTracks)}]");
+        Debug.Log($"[DailyQuestManager] 활성 트랙 개수: {activeTracks.Count}");
+    }
+    
+    /// <summary>선택된 트랙으로 퀘스트 생성 (트랙 선택 UI에서 호출)</summary>
+    public void GenerateQuestsForSelectedTracks()
+    {
+        if (activeTracks.Count == 0)
+        {
+            Debug.LogWarning("[DailyQuestManager] 활성 트랙이 없습니다!");
+            return;
+        }
+        
+        todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+        GenerateForToday();
+        Debug.Log($"[DailyQuestManager] 선택된 트랙으로 퀘스트 생성 완료: {activeTracks.Count}개");
+    }
+
+    // === 테스트용 메서드들 ===
+    [ContextMenu("Test/Clear All Quests")]
+    private void CM_ClearAllQuests()
+    {
+        Debug.Log("[DailyQuestManager] 퀘스트 초기화 시작");
+        ClearAllQuests();
+        Debug.Log("[DailyQuestManager] 퀘스트 초기화 완료");
+    }
+    
+    [ContextMenu("Test/Delete Save Files")]
+    private void CM_DeleteSaveFiles()
+    {
+        Debug.Log("[DailyQuestManager] 저장 파일 삭제 시작");
+        try
+        {
+            string basePath = Path.Combine(Application.persistentDataPath, "DailyQuests");
+            if (Directory.Exists(basePath))
+            {
+                var files = Directory.GetFiles(basePath, "*.json");
+                foreach (var file in files)
+                {
+                    File.Delete(file);
+                    Debug.Log($"[DailyQuestManager] 삭제된 파일: {Path.GetFileName(file)}");
+                }
+                Debug.Log($"[DailyQuestManager] 총 {files.Length}개 파일 삭제 완료");
+            }
+            
+            // 메모리에서도 초기화
+            todayQuests.Clear();
+            activeTracks.Clear();
+            save = new DailySave { date = todayStr, quests = new QuestData[0], streak = 0 };
+            OnQuestsGenerated?.Invoke(todayQuests);
+            
+            Debug.Log("[DailyQuestManager] 저장 파일 삭제 및 초기화 완료");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[DailyQuestManager] 저장 파일 삭제 중 오류: {ex.Message}");
+        }
+    }
+    
+    [ContextMenu("Test/Force Generate Quests")]
+    private void CM_ForceGenerateQuests()
+    {
+        Debug.Log("[DailyQuestManager] 강제 퀘스트 생성 시작");
+        todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+        GenerateForToday();
+        Debug.Log("[DailyQuestManager] 강제 퀘스트 생성 완료");
+    }
+
     // ===== Internals =====
     private void LoadOrInit()
     {
-        Debug.Log($"[DailyQuestManager] LoadOrInit() 시작 - todayStr: {todayStr}");
-        
         var path = PathFor(todayStr);
-        Debug.Log($"[DailyQuestManager] 저장 파일 경로 확인: {path}");
         
         if (File.Exists(path))
         {
-            Debug.Log("[DailyQuestManager] 오늘 날짜 저장 파일이 존재합니다. 로드합니다.");
             save = JsonUtility.FromJson<DailySave>(File.ReadAllText(path)) ?? new DailySave();
             todayQuests.Clear();
             if (save.quests != null) 
             {
                 todayQuests.AddRange(save.quests);
-                Debug.Log($"[DailyQuestManager] 저장된 퀘스트 {save.quests.Length}개 로드 완료");
             }
             OnQuestsGenerated?.Invoke(todayQuests);
         }
         else
         {
-            Debug.Log("[DailyQuestManager] 오늘 날짜 저장 파일이 없습니다.");
-            
-            // 현재 시간이 생성 시간 이후인지 확인
-            var now = DateTime.Now;
-            var todayGenTime = new DateTime(now.Year, now.Month, now.Day, generateHour, 0, 0);
-            
-            Debug.Log($"[DailyQuestManager] 현재 시간: {now:HH:mm:ss}");
-            Debug.Log($"[DailyQuestManager] 오늘 생성 시간: {todayGenTime:HH:mm:ss}");
-            
-            if (now >= todayGenTime)
+            // 저장 파일이 없으면 빈 상태로 유지 (트랙 선택 후 수동 생성)
+            todayQuests.Clear();
+            save = new DailySave
             {
-                Debug.Log("[DailyQuestManager] 생성 시간이 지났으므로 퀘스트를 생성합니다.");
-                GenerateForToday();
-            }
-            else
-            {
-                Debug.Log($"[DailyQuestManager] 아직 생성 시간이 아닙니다. {todayGenTime:HH:mm:ss}에 생성됩니다.");
-                // 빈 상태로 유지
-                todayQuests.Clear();
-                OnQuestsGenerated?.Invoke(todayQuests);
-            }
+                date = todayStr,
+                quests = new QuestData[0],
+                streak = 0
+            };
+            OnQuestsGenerated?.Invoke(todayQuests);
         }
     }
 
@@ -175,19 +297,7 @@ public sealed class DailyQuestManager : MonoBehaviour
             return;
         }
         
-        // 동적 보상 계산 - 퀘스트 개수에 따라 적절히 분배
-        (int txp, float tcoin) totals = n switch
-        {
-            1 => (totalXp1, totalCoin1),
-            2 => (totalXp2, totalCoin2),
-            3 => (totalXp3, totalCoin3),
-            _ => (totalXp3 + (n - 3) * 120, totalCoin3 + (n - 3) * 1.2f) // 3개 이상일 때 확장
-        };
-        Debug.Log($"[DailyQuestManager] 총 보상 - XP: {totals.txp}, Coin: {totals.tcoin}");
-        
-        int perXp = n > 0 ? Mathf.RoundToInt(totals.txp / (float)n) : 0;
-        float perCoin = n > 0 ? totals.tcoin / n : 0f;
-        Debug.Log($"[DailyQuestManager] 퀘스트당 보상 - XP: {perXp}, Coin: {perCoin}");
+        Debug.Log($"[DailyQuestManager] {n}개의 퀘스트를 생성합니다.");
 
         todayQuests.Clear();
         Debug.Log("[DailyQuestManager] todayQuests 리스트 초기화 완료");
@@ -200,8 +310,7 @@ public sealed class DailyQuestManager : MonoBehaviour
                 track = t,
                 title = TitleOf(t),
                 description = DescOf(t),
-                status = QuestStatus.Pending,
-                reward = new Reward { xp = perXp, coin = perCoin }
+                status = QuestStatus.Pending
             };
             
             todayQuests.Add(questData);
@@ -213,10 +322,7 @@ public sealed class DailyQuestManager : MonoBehaviour
         save = new DailySave {
             date = todayStr,
             quests = todayQuests.ToArray(),
-            xpTotal = 0,
-            coinTotal = 0f,
-            streak = save?.streak ?? 0,
-            gachaTickets = save?.gachaTickets ?? 0
+            streak = save?.streak ?? 0
         };
 
         Debug.Log($"[DailyQuestManager] DailySave 객체 생성 완료 - date: {save.date}, quests 배열 길이: {save.quests.Length}");
@@ -287,18 +393,19 @@ public sealed class DailyQuestManager : MonoBehaviour
                 var newTodayStr = DateTime.Now.ToString("yyyy-MM-dd");
                 Debug.Log($"[DailyQuestManager] Scheduler - 새로운 날짜: {newTodayStr}, 기존: {todayStr}");
                 
-                // 날짜가 바뀐 경우에만 새로운 퀘스트 생성
+                // 날짜가 바뀐 경우 기존 퀘스트를 지우고 트랙 선택을 다시 할 수 있도록 설정
                 if (newTodayStr != todayStr)
                 {
-                    Debug.Log("[DailyQuestManager] Scheduler - 날짜가 바뀌었으므로 새로운 퀘스트를 생성합니다.");
+                    Debug.Log("[DailyQuestManager] Scheduler - 날짜가 바뀌었습니다. 새로운 트랙 선택이 필요합니다.");
                     todayStr = newTodayStr;
                     
                     // 새 날짜의 저장 파일이 있는지 확인
                     var newPath = PathFor(todayStr);
                     if (!File.Exists(newPath))
                     {
-                        Debug.Log("[DailyQuestManager] Scheduler - 새 날짜의 저장 파일이 없으므로 퀘스트를 생성합니다.");
-                        GenerateForToday();
+                        Debug.Log("[DailyQuestManager] Scheduler - 새 날짜의 저장 파일이 없습니다. 트랙 선택을 기다립니다.");
+                        // 자동 생성하지 않고 사용자의 트랙 선택을 기다림
+                        ClearAllQuests(); // 기존 퀘스트를 클리어
                     }
                     else
                     {
@@ -335,138 +442,221 @@ public sealed class DailyQuestManager : MonoBehaviour
         _ => ""
     };
 
-    // --- 에디터 편의(선택). 요구 명세에 영향 없음 ---
-    [ContextMenu("Quests/Force Generate For Today")]
-    private void CM_ForceGenerate()
+    // ===== GitHub 자동 검증 관련 메서드들 =====
+    private void InitializeGitHubVerification()
     {
-        Debug.Log("[DailyQuestManager] Force Generate For Today 시작");
-        Debug.Log($"[DailyQuestManager] 현재 activeTracks 개수: {activeTracks.Count}");
-        
-        for (int i = 0; i < activeTracks.Count; i++)
+        if (!enableAutoVerification)
         {
-            Debug.Log($"[DailyQuestManager] activeTracks[{i}]: {activeTracks[i]}");
+            Debug.Log("[DailyQuestManager] GitHub 자동 검증이 비활성화되어 있습니다.");
+            return;
         }
         
-        todayStr = DateTime.Now.ToString("yyyy-MM-dd");
-        Debug.Log($"[DailyQuestManager] todayStr: {todayStr}");
+        if (string.IsNullOrEmpty(githubToken))
+        {
+            Debug.LogWarning("[DailyQuestManager] GitHub token이 설정되지 않아 자동 검증을 시작할 수 없습니다.");
+            return;
+        }
         
-        GenerateForToday();
-        
-        // Force Generate 후 UI가 반영되지 않는 경우를 위한 추가 조치
-        Debug.Log("[DailyQuestManager] Force Generate 완료 후 UI 강제 갱신 시도");
-        
-        // 혹시 UI가 아직 이벤트를 구독하지 않았을 경우를 대비해 잠시 후 다시 시도
-        StartCoroutine(DelayedUIRefresh());
+        try
+        {
+            _githubClient = new GithubClient(githubToken, githubUserAgent);
+            Debug.Log("[DailyQuestManager] GitHub 클라이언트 초기화 완료");
+            
+            // 자동 검증 코루틴 시작
+            if (_verificationCoroutine != null)
+            {
+                StopCoroutine(_verificationCoroutine);
+            }
+            _verificationCoroutine = StartCoroutine(AutoVerifyPortfolioQuests());
+            Debug.Log($"[DailyQuestManager] GitHub 자동 검증 시작 - {verificationInterval}초마다 확인");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[DailyQuestManager] GitHub 클라이언트 초기화 실패: {ex.Message}");
+        }
     }
     
-    private System.Collections.IEnumerator DelayedUIRefresh()
+    private IEnumerator AutoVerifyPortfolioQuests()
     {
-        yield return new WaitForSeconds(0.1f); // 짧은 지연
-        
-        Debug.Log("[DailyQuestManager] 지연된 UI 갱신 시도");
-        Debug.Log($"[DailyQuestManager] 현재 todayQuests 개수: {todayQuests.Count}");
-        
-        if (OnQuestsGenerated != null)
+        while (enableAutoVerification && _githubClient != null)
         {
-            var delegates = OnQuestsGenerated.GetInvocationList();
-            Debug.Log($"[DailyQuestManager] 지연된 UI 갱신 - 구독자 수: {delegates.Length}");
-            OnQuestsGenerated.Invoke(todayQuests);
-            Debug.Log("[DailyQuestManager] 지연된 UI 갱신 이벤트 발생 완료");
-        }
-        else
-        {
-            Debug.LogWarning("[DailyQuestManager] 지연된 UI 갱신 시도 실패 - 구독자 없음");
+            yield return new WaitForSeconds(verificationInterval);
             
-            // 더 긴 지연 후 다시 한 번 시도
-            yield return new WaitForSeconds(0.5f);
-            Debug.Log("[DailyQuestManager] 두 번째 지연된 UI 갱신 시도");
+            // async Task를 코루틴에서 실행하기 위한 래퍼
+            var verifyTask = VerifyPortfolioQuestsAsync();
+            yield return new WaitUntil(() => verifyTask.IsCompleted);
             
-            if (OnQuestsGenerated != null)
+            if (verifyTask.IsFaulted)
             {
-                var delegates = OnQuestsGenerated.GetInvocationList();
-                Debug.Log($"[DailyQuestManager] 두 번째 시도 - 구독자 수: {delegates.Length}");
-                OnQuestsGenerated.Invoke(todayQuests);
-                Debug.Log("[DailyQuestManager] 두 번째 시도 이벤트 발생 완료");
+                Debug.LogError($"[DailyQuestManager] Portfolio 퀘스트 자동 검증 중 오류: {verifyTask.Exception?.GetBaseException().Message}");
+            }
+        }
+    }
+    
+    private async System.Threading.Tasks.Task VerifyPortfolioQuestsAsync()
+    {
+        Debug.Log("[DailyQuestManager] Portfolio 퀘스트 자동 검증 시작");
+        
+        // Portfolio 타입의 미완료 퀘스트들을 찾기
+        var portfolioQuests = todayQuests.FindAll(q => 
+            q.track == TrackType.Portfolio && 
+            q.status == QuestStatus.Pending
+        );
+        
+        if (portfolioQuests.Count == 0)
+        {
+            Debug.Log("[DailyQuestManager] 검증할 Portfolio 퀘스트가 없습니다.");
+            return;
+        }
+        
+        Debug.Log($"[DailyQuestManager] {portfolioQuests.Count}개의 Portfolio 퀘스트 검증 중...");
+        
+        try
+        {
+            // 시간 기준에 따라 다르게 처리
+            DateTimeOffset sinceUtc, untilUtc;
+            
+            if (useLocalTime)
+            {
+                // 로컬 시간 기준
+                var todayLocal = DateTime.Today; // 로컬 시간 기준 오늘 00:00:00
+                var nowLocal = DateTime.Now;     // 현재 로컬 시간
+                
+                sinceUtc = new DateTimeOffset(todayLocal); // 로컬 시간 그대로 DateTimeOffset으로 변환
+                untilUtc = new DateTimeOffset(nowLocal);   // 로컬 시간 그대로 DateTimeOffset으로 변환
+                
+                Debug.Log($"[DailyQuestManager] 로컬 시간 기준으로 GitHub API 호출");
+                Debug.Log($"[DailyQuestManager] Local Since: {todayLocal:yyyy-MM-dd HH:mm:ss}");
+                Debug.Log($"[DailyQuestManager] Local Until: {nowLocal:yyyy-MM-dd HH:mm:ss}");
             }
             else
             {
-                Debug.LogError("[DailyQuestManager] 두 번째 시도도 실패 - UI가 이벤트를 구독하지 않았거나 Script Execution Order 문제입니다!");
+                // UTC 시간 기준 (권장)
+                var todayUtc = DateTime.UtcNow.Date; // UTC 기준 오늘 날짜
+                sinceUtc = new DateTimeOffset(todayUtc, TimeSpan.Zero); // UTC 오늘 00:00:00
+                untilUtc = DateTimeOffset.UtcNow; // 현재 UTC 시간
+                
+                Debug.Log($"[DailyQuestManager] UTC 시간 기준으로 GitHub API 호출");
+            }
+            
+            Debug.Log($"[DailyQuestManager] API 요청 시간: since={sinceUtc:yyyy-MM-ddTHH:mm:sszzz}, until={untilUtc:yyyy-MM-ddTHH:mm:sszzz}");
+            
+            var response = await _githubClient.ListCommitsRawAsync(
+                githubOwner, 
+                githubRepo, 
+                sinceUtc, 
+                untilUtc, 
+                author: "", // 모든 작성자
+                perPage: 100, // 최대 100개
+                branchOrSha: githubBranch, // 브랜치 지정 (빈 값이면 default)
+                CancellationToken.None
+            );
+            
+            if (response.Ok)
+            {
+                var commitCount = CountCommitsInResponse(response.Data);
+                
+                Debug.Log($"[DailyQuestManager] 오늘 커밋 수: {commitCount}");
+                
+                // 커밋이 1개 이상이면 Portfolio 퀘스트들을 완료 처리
+                if (commitCount > 0)
+                {
+                    Debug.Log($"🚀 [DailyQuestManager] GitHub에서 {commitCount}개의 커밋 확인! Portfolio 퀘스트 자동 완료 시작");
+                    
+                    foreach (var quest in portfolioQuests)
+                    {
+                        Debug.Log($"🔧 [DailyQuestManager] GitHub 자동 검증으로 Portfolio 퀘스트 완료: {quest.id} - {quest.title}");
+                        CompleteQuest(quest.id);
+                    }
+                    
+                    Debug.Log($"✨ [DailyQuestManager] GitHub 자동 검증 완료! {portfolioQuests.Count}개 Portfolio 퀘스트가 자동으로 완료되었습니다.");
+                }
+                else
+                {
+                    Debug.Log($"📝 [DailyQuestManager] 오늘 아직 커밋이 없습니다. Portfolio 퀘스트는 대기 상태로 유지됩니다.");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[DailyQuestManager] GitHub API 호출 실패: Status {response.Status}");
+            }
+        }
+        catch (System.ArgumentException ex)
+        {
+            Debug.LogError($"[DailyQuestManager] 시간 설정 오류: {ex.Message}");
+            Debug.LogError("[DailyQuestManager] Use Local Time 설정을 확인해주세요. UTC 기준(false) 권장.");
+        }
+        catch (System.Net.Http.HttpRequestException ex)
+        {
+            Debug.LogError($"[DailyQuestManager] GitHub API 네트워크 오류: {ex.Message}");
+        }
+        catch (System.Threading.Tasks.TaskCanceledException ex)
+        {
+            Debug.LogError($"[DailyQuestManager] GitHub API 요청 시간 초과: {ex.Message}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[DailyQuestManager] GitHub 커밋 확인 중 예상치 못한 오류: {ex.Message}");
+            Debug.LogError($"[DailyQuestManager] 오류 타입: {ex.GetType().Name}");
+            if (ex.InnerException != null)
+            {
+                Debug.LogError($"[DailyQuestManager] 내부 오류: {ex.InnerException.Message}");
             }
         }
     }
+    
+    private int CountCommitsInResponse(string jsonResponse)
+    {
+        // 간단한 방법으로 JSON 배열의 요소 개수 세기
+        if (string.IsNullOrEmpty(jsonResponse) || jsonResponse.Trim() == "[]")
+        {
+            return 0;
+        }
+        
+        // JSON 배열에서 객체 개수를 세는 간단한 방법
+        var count = 0;
+        var inString = false;
+        var escapeNext = false;
+        
+        for (int i = 0; i < jsonResponse.Length; i++)
+        {
+            var c = jsonResponse[i];
+            
+            if (escapeNext)
+            {
+                escapeNext = false;
+                continue;
+            }
+            
+            if (c == '\\')
+            {
+                escapeNext = true;
+                continue;
+            }
+            
+            if (c == '"')
+            {
+                inString = !inString;
+                continue;
+            }
+            
+            if (!inString && c == '{')
+            {
+                count++;
+            }
+        }
+        
+        return count;
+    }
 
-    [ContextMenu("Quests/Clear Today Save")]
-    private void CM_ClearToday()
+    // 다음 프레임에서 퀘스트 완료 이벤트 재발생 (안전성 강화)
+    private System.Collections.IEnumerator InvokeQuestCompletedNextFrame(QuestData questData)
     {
-        var p = PathFor(DateTime.Now.ToString("yyyy-MM-dd"));
-        if (File.Exists(p)) File.Delete(p);
-        todayQuests.Clear();
-        OnQuestsGenerated?.Invoke(todayQuests);
-    }
-    
-    // === 테스트용 메서드 ===
-    [ContextMenu("Test/Generate 10 Test Quests")]
-    private void CM_GenerateTestQuests()
-    {
-        GenerateTestQuests(10);
-    }
-    
-    private void GenerateTestQuests(int count)
-    {
-        Debug.Log($"[DailyQuestManager] 테스트용 {count}개 퀘스트 생성 시작");
+        yield return null; // 다음 프레임 대기
         
-        todayStr = DateTime.Now.ToString("yyyy-MM-dd");
-        todayQuests.Clear();
-        
-        // 테스트용 고정 보상 (개수에 상관없이)
-        int perXp = 100;
-        float perCoin = 1f;
-        
-        var allTracks = System.Enum.GetValues(typeof(TrackType)) as TrackType[];
-        
-        for (int i = 0; i < count; i++)
+        if (OnQuestCompleted != null)
         {
-            // 트랙 타입을 순환하면서 할당
-            var trackType = allTracks[i % allTracks.Length];
-            
-            var questData = new QuestData {
-                id = $"{todayStr}-{trackType}-{(i + 1):000}",
-                track = trackType,
-                title = TitleOf(trackType) + $" #{i + 1}",
-                description = DescOf(trackType) + $" (테스트 #{i + 1})",
-                status = QuestStatus.Pending,
-                reward = new Reward { xp = perXp, coin = perCoin }
-            };
-            
-            todayQuests.Add(questData);
-            Debug.Log($"[DailyQuestManager] 테스트 퀘스트 생성됨 - ID: {questData.id}");
-        }
-        
-        Debug.Log($"[DailyQuestManager] 테스트용 {count}개 퀘스트 생성 완료");
-        
-        // 저장
-        save = new DailySave {
-            date = todayStr,
-            quests = todayQuests.ToArray(),
-            xpTotal = 0,
-            coinTotal = 0f,
-            streak = save?.streak ?? 0,
-            gachaTickets = save?.gachaTickets ?? 0
-        };
-        
-        SaveToday();
-        
-        // UI 갱신
-        if (OnQuestsGenerated != null)
-        {
-            OnQuestsGenerated.Invoke(todayQuests);
-            Debug.Log($"[DailyQuestManager] 테스트 퀘스트 UI 갱신 완료 - {count}개");
-        }
-        else
-        {
-            Debug.LogWarning("[DailyQuestManager] 테스트 퀘스트 생성 완료, 하지만 UI 구독자 없음");
-            // 지연된 갱신 시도
-            StartCoroutine(DelayedUIRefresh());
+            OnQuestCompleted.Invoke(questData);
         }
     }
 }
