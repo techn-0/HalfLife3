@@ -61,7 +61,13 @@ public sealed class DailyQuestManager : MonoBehaviour
     private void Start()
     {
         Directory.CreateDirectory(BasePath);
-        todayStr = DateTime.Now.ToString("yyyy-MM-dd");
+        
+        // DateManager 초기화 (전역 날짜 관리)
+        var dateManager = DateManager.Instance;
+        Debug.Log($"[DailyQuestManager] DateManager 초기화 - 현재 날짜: {dateManager.GetCurrentDateString()}, 새로운 날: {dateManager.IsNewDay}");
+        
+        // DateManager의 날짜를 사용
+        todayStr = dateManager.GetCurrentDateString();
         
         // 트랙 선택을 위해 activeTracks 초기화 (인스펙터 설정 무시)
         activeTracks.Clear();
