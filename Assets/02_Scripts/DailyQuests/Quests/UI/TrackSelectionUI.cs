@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using _02_Scripts.Reward;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -106,7 +107,9 @@ public class TrackSelectionUI : MonoBehaviour
         {
             Debug.LogError("[TrackSelectionUI] DailyQuestManager.Instance가 null입니다!");
         }
-        
+
+        RewardManager.Instance.SetTrackCount(RewardType.Daily, selectedTracks.Count);
+
         // 메인 화면으로 전환
         ShowMainPanel();
     }

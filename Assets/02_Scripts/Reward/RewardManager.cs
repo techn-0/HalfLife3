@@ -491,6 +491,7 @@ namespace _02_Scripts.Reward
         public void ResetToday()
         {
             _rewards.Clear();
+            _trackCounts.Clear();
             
             // 데이터 변경 시 자동 저장
             SaveData();
