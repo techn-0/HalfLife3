@@ -87,4 +87,21 @@ namespace _02_Scripts.Http.Components
         [JsonProperty("used")]
         public int Used { get; set; }
     }
+
+    [Serializable]
+    public class RepositoryInfo
+    {
+        [JsonProperty("name")] 
+        public string Name { get; set; }
+        
+        [JsonProperty("full_name")] 
+        public string FullName { get; set; }
+
+        // JSON 키 "private" -> C# 프로퍼티는 예약어 피해서 IsPrivate로
+        [JsonProperty("private")] 
+        public bool IsPrivate { get; set; }
+
+        [JsonProperty("default_branch")] 
+        public string DefaultBranch { get; set; }
+    }
 }
