@@ -13,7 +13,8 @@ public class ShopElement : MonoBehaviour
     
     [SerializeField] private string id;
     [SerializeField] private int price;
-    [SerializeField] private Sprite sprite;
+    [SerializeField] private string name;
+    [SerializeField] private TextMeshProUGUI NameTMP;
     
     [SerializeField] private ActiveObject[] ActiveObj = new  ActiveObject[2];
     [SerializeField] private ActiveObject[] PriceObj = new  ActiveObject[2];
@@ -28,6 +29,7 @@ public class ShopElement : MonoBehaviour
     {
         button?.onClick.AddListener(ClickBtn);
         PriceTMP.text = price.ToString();
+        NameTMP.text = name;
         
         UpdateUI();
     }
