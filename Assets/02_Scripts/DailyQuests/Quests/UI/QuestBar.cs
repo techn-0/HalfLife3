@@ -23,13 +23,20 @@ public class QuestBar : MonoBehaviour
     [SerializeField] UnityEngine.UI.Image foreground;   // fillAmount만 설정
     [SerializeField] TMP_Text valueText;
     [SerializeField] RewardType rewardType;
-    
+    [SerializeField] UnityEngine.UI.Button rewardButton;
+
     private int maxValue => RewardManager.Instance.GetProgress(rewardType).Goal;
     private int currentValue => RewardManager.Instance.GetProgress(rewardType).Count;
 
     void Start()
     {
         UpdateUI();
+        
+        // 보상 버튼 클릭 이벤트 연결
+        if (rewardButton != null)
+        {
+            rewardButton.onClick.AddListener(OnRewardButtonClicked);
+        }
     }
 
     // UI 갱신
@@ -39,5 +46,32 @@ public class QuestBar : MonoBehaviour
         foreground.fillAmount = fillValue;
         valueText.text = $"{currentValue}/{maxValue}";
         Debug.Log($"QuestBar UpdateUI: current={currentValue}, max={maxValue}, fillAmount={fillValue}");
+        
+        // 보상 버튼 활성화 조건: 완료됨 && 아직 수령하지 않음
+        UpdateRewardButton();
     }
+    
+    private void UpdateRewardButton()
+    {
+        if (rewardButton != null)
+        {
+            bool isCompleted = currentValue >= maxValue && maxValue > 0;
+            bool notReceived = !RewardManager.Instance.IsReceived(rewardType);
+            rewardButton.interactable = isCompleted && notReceived;
+        }
+    }
+    
+    private void OnRewardButtonClicked()
+    {
+        if (RewardManager.Instance.TryReceive(rewardType, out var progress))
+        {
+            Debug.Log($"보상 수령 성공: {rewardType}");
+            UpdateUI(); // UI 갱신하여 버튼 비활성화
+        }
+        else
+        {
+            Debug.Log($"보상 수령 실패: {rewardType}");
+        }
+    }
+    
 }
