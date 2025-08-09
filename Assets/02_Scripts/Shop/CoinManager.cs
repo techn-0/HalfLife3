@@ -1,7 +1,6 @@
 // CoinManager.cs
 
 using System;
-using System.IO;
 using UnityEngine;
 using _02_Scripts.Common;
 
