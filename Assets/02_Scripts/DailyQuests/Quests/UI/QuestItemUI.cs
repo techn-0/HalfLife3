@@ -176,7 +176,7 @@ public class QuestItemUI : MonoBehaviour
     public void OnClickComplete()
     {
         Debug.Log($"🎯 [QuestItemUI] 완료 버튼 클릭: {questId}");
-        
+
         // QuestListUI로 처리 위임 (참조 우선, fallback으로 Find 사용)
         var questListUI = parentQuestListUI ?? FindFirstObjectByType<QuestListUI>();
         if (questListUI != null)
@@ -186,6 +186,12 @@ public class QuestItemUI : MonoBehaviour
         else
         {
             Debug.LogError($"❌ [QuestItemUI] QuestListUI를 찾을 수 없습니다!");
+        }
+        // QuestBar의 UpdateUI 호출
+        var questBar = FindFirstObjectByType<QuestBar>();
+        if (questBar != null)
+        {
+            questBar.UpdateUI();
         }
     }
 }
