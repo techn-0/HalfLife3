@@ -71,7 +71,7 @@ namespace DanielLochner.Assets.SimpleScrollSnap
             serializedObject.ApplyModifiedProperties();
             PrefabUtility.RecordPrefabInstancePropertyModifications(scrollSnap);
         }
-
+        
         private void ShowMovementAndLayoutSettings()
         {
             EditorGUILayout.Space();
