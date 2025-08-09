@@ -1,3 +1,5 @@
+using System;
+using _02_Scripts.Shop;
 using UnityEngine;
 
 public class GameManager : BaseSingleton<GameManager>
@@ -7,8 +9,7 @@ public class GameManager : BaseSingleton<GameManager>
     
     public DecoPopUp decoPopUp;
     public RoomController roomController;
-    
-    public int Gold;
+    public Overlay overlay;
     void Awake()
     {
         if (instance == null)
@@ -24,7 +25,14 @@ public class GameManager : BaseSingleton<GameManager>
 
     public void Start()
     {
+        if (!PlayerPrefs.HasKey("Human1_isOpen"))
+        {
+            PlayerPrefs.SetInt("Human1_isOpen", 1);
+            PlayerPrefs.SetInt("Human1_isActive", 1);
+        }
+        
         decoPopUp.Init();
         roomController.Init();
+        overlay.Init();
     }
 }
