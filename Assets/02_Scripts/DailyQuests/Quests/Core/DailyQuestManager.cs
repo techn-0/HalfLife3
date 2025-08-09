@@ -52,6 +52,7 @@ public sealed class DailyQuestManager : MonoBehaviour
     // GitHub 자동 검증 관련
     private GithubService _githubService;
     private Coroutine _verificationCoroutine;
+    private DateTimeOffset _githubSettingsUpdatedTime; // GitHub 설정 업데이트 시점 저장
 
     private string BasePath =>
         Path.Combine(Application.persistentDataPath, "DailyQuests");
@@ -87,6 +88,9 @@ public sealed class DailyQuestManager : MonoBehaviour
         LoadOrInit();
         SetupNextGenTime();
         StartCoroutine(Scheduler());
+
+        UpdateGitHubSettingsAsync(githubToken, githubUserAgent,  githubOwner, githubRepo);
+        StartGitHubVerification();
     }
 
     // ===== Public API =====
@@ -164,6 +168,9 @@ public sealed class DailyQuestManager : MonoBehaviour
         githubRepo = repo;
         githubBranch = branch;
 
+        // GitHub 설정 업데이트 시점 저장
+        _githubSettingsUpdatedTime = DateTimeOffset.Now;
+
         Debug.Log($"[DailyQuestManager] GitHub 설정 업데이트 완료 - Owner: {owner}, Repo: {repo}");
 
         // 자동으로 검증 시작 (설정이 유효하면)
@@ -222,6 +229,10 @@ public sealed class DailyQuestManager : MonoBehaviour
                 githubBranch = defaultBranch;
                 Debug.Log($"[DailyQuestManager] 기본 브랜치 사용: {defaultBranch}");
             }
+
+            // GitHub 설정 업데이트 시점 저장
+            _githubSettingsUpdatedTime = DateTimeOffset.Now;
+            Debug.Log($"[DailyQuestManager] GitHub 설정 업데이트 시점 저장: {_githubSettingsUpdatedTime:yyyy-MM-dd HH:mm:ss}");
 
             Debug.Log($"[DailyQuestManager] GitHub 저장소 검증 성공 - Owner: {owner}, Repo: {repo}, Private: {isPrivate}, Branch: {githubBranch}");
 
@@ -680,21 +691,45 @@ public sealed class DailyQuestManager : MonoBehaviour
 
         try
         {
-            // GithubService의 GetTodayCommitCountAsync 사용 (UTC+9 기준)
-            var commitCount = await _githubService.GetTodayCommitCountAsync(
-                githubOwner,
-                githubRepo,
-                githubOwner, // author로 사용 (빈 문자열 대신 owner 사용)
-                githubBranch, // 브랜치 지정 (빈 값이면 default branch 사용)
-                CancellationToken.None
-            );
+            int commitCount = 0;
 
-            Debug.Log($"[DailyQuestManager] 오늘 커밋 수: {commitCount}");
+            // GitHub 설정 업데이트 시점이 설정되어 있는지 확인
+            if (_githubSettingsUpdatedTime != DateTimeOffset.MinValue)
+            {
+                // 설정 업데이트 시점 이후의 커밋 수 조회
+                commitCount = await _githubService.GetCommitCountSinceAsync(
+                    githubOwner,
+                    githubRepo,
+                    githubOwner, // author로 사용 (빈 문자열 대신 owner 사용)
+                    githubBranch, // 브랜치 지정 (빈 값이면 default branch 사용)
+                    _githubSettingsUpdatedTime, // 설정 업데이트 시점 이후
+                    CancellationToken.None
+                );
+
+                Debug.Log($"[DailyQuestManager] GitHub 설정 업데이트 시점 ({_githubSettingsUpdatedTime:yyyy-MM-dd HH:mm:ss}) 이후 커밋 수: {commitCount}");
+            }
+            else
+            {
+                // 설정 업데이트 시점이 없으면 오늘의 커밋으로 폴백
+                commitCount = await _githubService.GetTodayCommitCountAsync(
+                    githubOwner,
+                    githubRepo,
+                    githubOwner, // author로 사용 (빈 문자열 대신 owner 사용)
+                    githubBranch, // 브랜치 지정 (빈 값이면 default branch 사용)
+                    CancellationToken.None
+                );
+
+                Debug.Log($"[DailyQuestManager] GitHub 설정 시점이 없어 오늘의 커밋 수로 확인: {commitCount}");
+            }
 
             // 커밋이 1개 이상이면 Portfolio 퀘스트들을 완료 처리
             if (commitCount > 0)
             {
-                Debug.Log($"🚀 [DailyQuestManager] GitHub에서 {commitCount}개의 커밋 확인! Portfolio 퀘스트 자동 완료 시작");
+                var timeDescription = _githubSettingsUpdatedTime != DateTimeOffset.MinValue 
+                    ? $"GitHub 설정 업데이트 시점 ({_githubSettingsUpdatedTime:yyyy-MM-dd HH:mm:ss}) 이후"
+                    : "오늘";
+
+                Debug.Log($"🚀 [DailyQuestManager] {timeDescription}에 {commitCount}개의 커밋 확인! Portfolio 퀘스트 자동 완료 시작");
 
                 foreach (var quest in portfolioQuests)
                 {
@@ -706,7 +741,11 @@ public sealed class DailyQuestManager : MonoBehaviour
             }
             else
             {
-                Debug.Log($"📝 [DailyQuestManager] 오늘 아직 커밋이 없습니다. Portfolio 퀘스트는 대기 상태로 유지됩니다.");
+                var timeDescription = _githubSettingsUpdatedTime != DateTimeOffset.MinValue 
+                    ? $"GitHub 설정 업데이트 시점 ({_githubSettingsUpdatedTime:yyyy-MM-dd HH:mm:ss}) 이후"
+                    : "오늘";
+
+                Debug.Log($"📝 [DailyQuestManager] {timeDescription}에 아직 커밋이 없습니다. Portfolio 퀘스트는 대기 상태로 유지됩니다.");
             }
         }
         catch (System.Net.Http.HttpRequestException ex)
