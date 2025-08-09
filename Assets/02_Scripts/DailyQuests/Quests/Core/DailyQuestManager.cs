@@ -215,6 +215,8 @@ public sealed class DailyQuestManager : MonoBehaviour
         Debug.Log("[DailyQuestManager] 퀘스트 초기화 시작");
         ClearAllQuests();
         Debug.Log("[DailyQuestManager] 퀘스트 초기화 완료");
+        // RewardManager 초기화
+        RewardManager.Instance.ResetToday();
     }
     
     [ContextMenu("Test/Delete Save Files")]
