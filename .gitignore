@@ -69,3 +69,5 @@ crashlytics-build.properties
 *.so
 .vscode/launch.json
 *.dwlt
+
+.vscode/
