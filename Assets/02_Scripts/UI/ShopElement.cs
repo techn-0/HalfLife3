@@ -60,6 +60,7 @@ public class ShopElement : MonoBehaviour
                     // 구매 상태 저장
                     isOpen = true;
                     FilterHuman();
+                    FilterCat();
                     
                     PlayerPrefs.SetInt($"{id}_isOpen", 1);
                     PlayerPrefs.SetInt($"{id}_isActive", 1); // 구매하면 자동 활성화
