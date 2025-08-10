@@ -53,11 +53,28 @@ public class QuestBar : MonoBehaviour
     
     private void UpdateRewardButton()
     {
+        bool isReceived = RewardManager.Instance.IsReceived(rewardType);
+        
+        // 이미 수령했다면 모든 UI 요소 비활성화
+        if (isReceived)
+        {
+            background.enabled = false;
+            foreground.enabled = false;
+            valueText.enabled = false;
+            if (rewardButton != null)
+                rewardButton.gameObject.SetActive(false);
+            return;
+        }
+        
+        // 수령하지 않았다면 정상 로직 실행
+        background.enabled = true;
+        foreground.enabled = true;
+        valueText.enabled = true;
         if (rewardButton != null)
         {
+            rewardButton.gameObject.SetActive(true);
             bool isCompleted = currentValue >= maxValue && maxValue > 0;
-            bool notReceived = !RewardManager.Instance.IsReceived(rewardType);
-            rewardButton.interactable = isCompleted && notReceived;
+            rewardButton.interactable = isCompleted;
         }
     }
     
