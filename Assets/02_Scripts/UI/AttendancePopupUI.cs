@@ -119,7 +119,7 @@ namespace _02_Scripts.Reward
         /// <summary>
         /// 팝업 표시 시퀀스
         /// </summary>
-        private IEnumerator ShowPopupSequence(float displayDuration)
+        public IEnumerator ShowPopupSequence(float displayDuration)
         {
             // 1. 페이드 인
             yield return StartCoroutine(FadeInAnimation());
@@ -144,22 +144,22 @@ namespace _02_Scripts.Reward
         private IEnumerator FadeInAnimation()
         {
             float elapsedTime = 0f;
-            
+
             // Unity에서 설정된 위치로 이동
             rectTransform.anchoredPosition = originalPosition;
-            
+
             while (elapsedTime < fadeInDuration)
             {
                 float progress = elapsedTime / fadeInDuration;
                 float curveValue = fadeInCurve.Evaluate(progress);
-                
+
                 // 알파값 애니메이션만 처리
                 canvasGroup.alpha = curveValue;
-                
+
                 elapsedTime += Time.deltaTime;
                 yield return null;
             }
-            
+
             // 최종 상태 보장
             canvasGroup.alpha = 1f;
         }

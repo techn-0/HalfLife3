@@ -53,6 +53,7 @@ namespace _02_Scripts.Reward
                 // 출석 보상 수령 기록 초기화
                 CM_ResetTodayAttendance();
 
+
                 // 구매목록, 배치 초기화
                 PlayerPrefs.DeleteAll();
                 PlayerPrefs.Save();
@@ -70,13 +71,18 @@ namespace _02_Scripts.Reward
 
                 // 코인 초기화
                 CoinManager.ResetCoins();
-                
+
                 // RewardManager 초기화 일일 관련
                 RewardManager.Instance.ResetToday();
 
                 // 씬 초기화
-                Scene currentScene = SceneManager.GetActiveScene();
-                SceneManager.LoadScene(currentScene.name);
+                // Scene currentScene = SceneManager.GetActiveScene();
+                // SceneManager.LoadScene(currentScene.name);
+
+                // 팝업 시퀀스 실행 (씬 리로드 후 실행하려면 코루틴을 별도로 처리해야 함)
+                // ShowAttendancePopup(); // 기존 팝업 방식 사용
+                // StartCoroutine(currentPopupInstance.GetComponent<AttendancePopupUI>().ShowPopupSequence(3.0f));
+
             }
         }
 
