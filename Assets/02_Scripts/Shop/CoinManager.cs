@@ -20,6 +20,12 @@ namespace _02_Scripts.Shop
         /// <summary>코인을 소모 시도합니다 (consume). 성공 시 true.</summary>
         public static bool TrySpendCoins(long amount) => Instance && Instance.TrySpend(amount);
 
+        /// <summary>코인을 특정 값으로 설정합니다 (치트/테스트용).</summary>
+        public static void SetCoins(long amount) => Instance?.SetBalance(amount);
+
+        /// <summary>코인을 0으로 초기화합니다 (치트/테스트용).</summary>
+        public static void ResetCoins() => Instance?.SetBalance(0);
+
         /// <summary>잔액 변경 시 호출되는 콜백 (English: balance changed event)</summary>
         public event Action<long> OnBalanceChanged;
 
@@ -93,6 +99,14 @@ namespace _02_Scripts.Shop
             OnBalanceChanged?.Invoke(_balance);
             Save();
             return true;
+        }
+
+        private void SetBalance(long amount)
+        {
+            if (amount < 0) return; // 음수는 거부
+            _balance = amount;
+            OnBalanceChanged?.Invoke(_balance);
+            Save();
         }
 
         // ===== Persistence =====

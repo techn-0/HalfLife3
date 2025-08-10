@@ -68,6 +68,11 @@ namespace _02_Scripts.Reward
                     Debug.LogWarning("[AttendanceRewardManager] DailyQuestManager.Instance가 null입니다.");
                 }
 
+                // 코인 초기화
+                CoinManager.ResetCoins();
+                
+                // RewardManager 초기화 일일 관련
+                RewardManager.Instance.ResetToday();
 
                 // 씬 초기화
                 Scene currentScene = SceneManager.GetActiveScene();
