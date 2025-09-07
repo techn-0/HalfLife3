@@ -4,9 +4,20 @@
 ## 🎯 프로젝트 개요
 개발자의 지속적인 성장을 지원하는 일일 퀘스트 게임입니다.
 매일 오전 8시에 자동으로 퀘스트가 생성되며, 완료 시 포인트를 획득하여 룸을 꾸밀 수 있습니다.
-<img width="533" height="1057" alt="image" src="https://github.com/user-attachments/assets/2aaed8c4-55af-4f97-a99c-38b5ef6c4489" />
-<img width="535" height="1064" alt="image" src="https://github.com/user-attachments/assets/f305082a-e75c-426f-a989-5b0ea5ef84ba" />
-<img width="536" height="1064" alt="image" src="https://github.com/user-attachments/assets/303015ef-4c6d-4687-b6ef-597a8e21a6b9" />
+
+<table>
+  <tr>
+    <td width="33%">
+      <img width="300" alt="게임 스크린샷 1" src="https://github.com/user-attachments/assets/2aaed8c4-55af-4f97-a99c-38b5ef6c4489" />
+    </td>
+    <td width="33%">
+      <img width="300" alt="게임 스크린샷 2" src="https://github.com/user-attachments/assets/f305082a-e75c-426f-a989-5b0ea5ef84ba" />
+    </td>
+    <td width="33%">
+      <img width="300" alt="게임 스크린샷 3" src="https://github.com/user-attachments/assets/303015ef-4c6d-4687-b6ef-597a8e21a6b9" />
+    </td>
+  </tr>
+</table>
 
 
 
